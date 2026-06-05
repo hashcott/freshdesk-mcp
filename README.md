@@ -343,7 +343,7 @@ This server transmits your Freshdesk API key to `*.freshdesk.com` over HTTPS onl
 
 ## License
 
-[MIT](LICENSE) © freshdesk-mcp contributors
+[MIT](LICENSE) © hashcott contributors
 
 ---
 
@@ -351,4 +351,3 @@ This server transmits your Freshdesk API key to `*.freshdesk.com` over HTTPS onl
 
 - The Freshdesk team for the well-documented public API
 - The Model Context Protocol authors and `@modelcontextprotocol/sdk` maintainers
-- The original Python [`freshdesk-mcp`](./freshdesk_mcp/) (Gopi Krishnan, Maanaesh Swamy) which inspired the tool coverage of this TypeScript port
