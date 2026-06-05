@@ -1,5 +1,5 @@
-import type { ZodType, ZodTypeDef } from "zod";
 import type { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ZodType, ZodTypeDef } from "zod";
 
 export const text = (obj: any) => ({
   content: [{ type: "text" as const, text: JSON.stringify(obj, null, 2) }],
@@ -8,9 +8,7 @@ export const text = (obj: any) => ({
 export function validate<T>(
   schema: ZodType<T, ZodTypeDef, unknown>,
   data: unknown,
-):
-  | { ok: true; data: T }
-  | { ok: false; reply: ReturnType<typeof text> } {
+): { ok: true; data: T } | { ok: false; reply: ReturnType<typeof text> } {
   const parsed = schema.safeParse(data);
   if (parsed.success) return { ok: true, data: parsed.data };
   return {

@@ -1,15 +1,15 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fd, errorPayload } from "../freshdesk.js";
-import { text, validate, tool } from "../util.js";
+import { z } from "zod";
+import { errorPayload, fd } from "../freshdesk.js";
 import {
   ContactCreate,
-  ContactUpdate,
-  ContactsMerge,
-  MakeAgentFields,
   ContactFieldCreate,
   ContactFieldUpdate,
+  ContactsMerge,
+  ContactUpdate,
+  MakeAgentFields,
 } from "../schemas/index.js";
+import { text, tool, validate } from "../util.js";
 
 const pageArgs = {
   page: z.number().int().min(1).optional().default(1),
@@ -17,7 +17,8 @@ const pageArgs = {
 };
 
 export function registerContactTools(server: McpServer) {
-  tool(server, 
+  tool(
+    server,
     "list_contacts",
     "List contacts.",
     {
@@ -35,17 +36,30 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, "get_contact", "Get a contact by ID.", { contact_id: z.number().int() }, async ({ contact_id }) => {
-    const res = await fd.get(`/contacts/${contact_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to fetch contact", res));
-  });
+  tool(
+    server,
+    "get_contact",
+    "Get a contact by ID.",
+    { contact_id: z.number().int() },
+    async ({ contact_id }) => {
+      const res = await fd.get(`/contacts/${contact_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to fetch contact", res));
+    },
+  );
 
-  tool(server, "search_contacts", "Autocomplete search contacts.", { query: z.string() }, async ({ query }) => {
-    const res = await fd.get("/contacts/autocomplete", { term: query });
-    return text(res.ok ? res.data : errorPayload("Failed to search contacts", res));
-  });
+  tool(
+    server,
+    "search_contacts",
+    "Autocomplete search contacts.",
+    { query: z.string() },
+    async ({ query }) => {
+      const res = await fd.get("/contacts/autocomplete", { term: query });
+      return text(res.ok ? res.data : errorPayload("Failed to search contacts", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "create_contact",
     "Create a contact.",
     { contact: z.record(z.any()) },
@@ -57,7 +71,8 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "update_contact",
     "Update a contact.",
     { contact_id: z.number().int(), contact: z.record(z.any()) },
@@ -69,13 +84,20 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, "delete_contact", "Soft-delete a contact.", { contact_id: z.number().int() }, async ({ contact_id }) => {
-    const res = await fd.delete(`/contacts/${contact_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete contact", res));
-  });
+  tool(
+    server,
+    "delete_contact",
+    "Soft-delete a contact.",
+    { contact_id: z.number().int() },
+    async ({ contact_id }) => {
+      const res = await fd.delete(`/contacts/${contact_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete contact", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "hard_delete_contact",
     "Permanently delete a contact.",
     { contact_id: z.number().int(), force: z.boolean().optional() },
@@ -89,13 +111,20 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, "restore_contact", "Restore a soft-deleted contact.", { contact_id: z.number().int() }, async ({ contact_id }) => {
-    const res = await fd.put(`/contacts/${contact_id}/restore`);
-    if (res.status === 204 || res.ok) return text({ success: true, data: res.data });
-    return text(errorPayload("Failed to restore contact", res));
-  });
+  tool(
+    server,
+    "restore_contact",
+    "Restore a soft-deleted contact.",
+    { contact_id: z.number().int() },
+    async ({ contact_id }) => {
+      const res = await fd.put(`/contacts/${contact_id}/restore`);
+      if (res.status === 204 || res.ok) return text({ success: true, data: res.data });
+      return text(errorPayload("Failed to restore contact", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "merge_contacts",
     "Merge secondary contacts into a primary.",
     { merge: z.record(z.any()) },
@@ -107,7 +136,8 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "make_agent",
     "Convert a contact into an agent.",
     { contact_id: z.number().int(), agent: z.record(z.any()).optional() },
@@ -120,16 +150,28 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, "send_contact_invite", "Send a portal invite to a contact.", { contact_id: z.number().int() }, async ({ contact_id }) => {
-    const res = await fd.put(`/contacts/${contact_id}/send_invite`);
-    if (res.status === 204 || res.ok) return text({ success: true });
-    return text(errorPayload("Failed to send invite", res));
-  });
+  tool(
+    server,
+    "send_contact_invite",
+    "Send a portal invite to a contact.",
+    { contact_id: z.number().int() },
+    async ({ contact_id }) => {
+      const res = await fd.put(`/contacts/${contact_id}/send_invite`);
+      if (res.status === 204 || res.ok) return text({ success: true });
+      return text(errorPayload("Failed to send invite", res));
+    },
+  );
 
-  tool(server, "list_deleted_contacts", "List soft-deleted contacts.", pageArgs, async ({ page, per_page }) => {
-    const res = await fd.get("/contacts", { state: "deleted", page, per_page });
-    return text(res.ok ? res.data : errorPayload("Failed to list deleted contacts", res));
-  });
+  tool(
+    server,
+    "list_deleted_contacts",
+    "List soft-deleted contacts.",
+    pageArgs,
+    async ({ page, per_page }) => {
+      const res = await fd.get("/contacts", { state: "deleted", page, per_page });
+      return text(res.ok ? res.data : errorPayload("Failed to list deleted contacts", res));
+    },
+  );
 
   // Contact fields
   tool(server, "list_contact_fields", "List contact field definitions.", {}, async () => {
@@ -137,12 +179,19 @@ export function registerContactTools(server: McpServer) {
     return text(res.ok ? res.data : errorPayload("Failed to list contact fields", res));
   });
 
-  tool(server, "view_contact_field", "View a contact field.", { contact_field_id: z.number().int() }, async ({ contact_field_id }) => {
-    const res = await fd.get(`/contact_fields/${contact_field_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to view contact field", res));
-  });
+  tool(
+    server,
+    "view_contact_field",
+    "View a contact field.",
+    { contact_field_id: z.number().int() },
+    async ({ contact_field_id }) => {
+      const res = await fd.get(`/contact_fields/${contact_field_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to view contact field", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "create_contact_field",
     "Create a contact field.",
     { contact_field: z.record(z.any()) },
@@ -154,7 +203,8 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "update_contact_field",
     "Update a contact field.",
     { contact_field_id: z.number().int(), contact_field: z.record(z.any()) },
@@ -166,9 +216,15 @@ export function registerContactTools(server: McpServer) {
     },
   );
 
-  tool(server, "delete_contact_field", "Delete a contact field.", { contact_field_id: z.number().int() }, async ({ contact_field_id }) => {
-    const res = await fd.delete(`/contact_fields/${contact_field_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete contact field", res));
-  });
+  tool(
+    server,
+    "delete_contact_field",
+    "Delete a contact field.",
+    { contact_field_id: z.number().int() },
+    async ({ contact_field_id }) => {
+      const res = await fd.delete(`/contact_fields/${contact_field_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete contact field", res));
+    },
+  );
 }

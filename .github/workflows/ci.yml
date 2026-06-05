@@ -76,6 +76,22 @@ jobs:
           curl -sf http://localhost:3333/health
           kill $SERVER_PID
 
+  lint:
+    name: Lint & format (Biome)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Biome check
+        run: npx biome check --diagnostic-level=error src/
+
   audit:
     name: Security audit
     runs-on: ubuntu-latest

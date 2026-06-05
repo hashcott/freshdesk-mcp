@@ -1,9 +1,9 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import express, { type Request, type Response } from "express";
-import { randomUUID } from "node:crypto";
 import { buildServer } from "./server.js";
 
 type TransportMode = "stdio" | "http";
@@ -46,7 +46,7 @@ async function runHttp() {
         },
       });
       transport.onclose = () => {
-        if (transport!.sessionId) delete transports[transport!.sessionId];
+        if (transport?.sessionId) delete transports[transport?.sessionId];
       };
       const server = buildServer();
       await server.connect(transport);
@@ -80,7 +80,9 @@ async function runHttp() {
 
   const port = parseInt(process.env.PORT || "3000", 10);
   app.listen(port, () => {
-    console.error(`[freshdesk-mcp] Streamable HTTP transport ready on http://localhost:${port}/mcp`);
+    console.error(
+      `[freshdesk-mcp] Streamable HTTP transport ready on http://localhost:${port}/mcp`,
+    );
   });
 }
 

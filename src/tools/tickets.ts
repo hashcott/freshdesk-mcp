@@ -1,23 +1,20 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fd, parseLinkHeader, errorPayload } from "../freshdesk.js";
-import { text, validate, tool } from "../util.js";
+import { z } from "zod";
+import { errorPayload, fd, parseLinkHeader } from "../freshdesk.js";
 import {
-  TicketCreate,
-  TicketUpdate,
-  TicketBulkUpdateAction,
+  ConversationUpdate,
+  NoteCreate,
+  ReplyCreate,
   TicketBulkDeleteAction,
-  TicketMerge,
-  TicketForward,
-  TicketStatusEnum,
-  TicketSourceEnum,
-  TicketPriorityEnum,
+  TicketBulkUpdateAction,
+  TicketCreate,
   TicketFieldCreate,
   TicketFieldUpdate,
-  ReplyCreate,
-  NoteCreate,
-  ConversationUpdate,
+  TicketForward,
+  TicketMerge,
+  TicketUpdate,
 } from "../schemas/index.js";
+import { text, tool, validate } from "../util.js";
 
 export function registerTicketTools(server: McpServer) {
   tool(server, "get_ticket_fields", "Get all ticket field definitions.", {}, async () => {
@@ -25,7 +22,8 @@ export function registerTicketTools(server: McpServer) {
     return text(res.ok ? res.data : errorPayload("Failed to fetch ticket fields", res));
   });
 
-  tool(server, 
+  tool(
+    server,
     "get_tickets",
     "List tickets with pagination + filter support.",
     {
@@ -57,7 +55,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "create_ticket",
     "Create a ticket. Validates against Freshdesk ticket schema; unknown keys are passed through.",
     { ticket: z.record(z.any()) },
@@ -70,7 +69,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "update_ticket",
     "Update a ticket (partial update; only provided fields are sent).",
     {
@@ -82,32 +82,59 @@ export function registerTicketTools(server: McpServer) {
       const v = validate(TicketUpdate, ticket);
       if (!v.ok) return v.reply;
       const res = await fd.put(`/tickets/${ticket_id}`, v.data);
-      return text(res.ok ? { success: true, ticket: res.data } : errorPayload("Failed to update ticket", res));
+      return text(
+        res.ok ? { success: true, ticket: res.data } : errorPayload("Failed to update ticket", res),
+      );
     },
   );
 
-  tool(server, "delete_ticket", "Soft-delete a ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.delete(`/tickets/${ticket_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete ticket", res));
-  });
+  tool(
+    server,
+    "delete_ticket",
+    "Soft-delete a ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.delete(`/tickets/${ticket_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete ticket", res));
+    },
+  );
 
-  tool(server, "get_ticket", "Get a single ticket.", { ticket_id: z.number().int(), include: z.string().optional() }, async ({ ticket_id, include }) => {
-    const res = await fd.get(`/tickets/${ticket_id}`, { include });
-    return text(res.ok ? res.data : errorPayload("Failed to fetch ticket", res));
-  });
+  tool(
+    server,
+    "get_ticket",
+    "Get a single ticket.",
+    { ticket_id: z.number().int(), include: z.string().optional() },
+    async ({ ticket_id, include }) => {
+      const res = await fd.get(`/tickets/${ticket_id}`, { include });
+      return text(res.ok ? res.data : errorPayload("Failed to fetch ticket", res));
+    },
+  );
 
-  tool(server, "search_tickets", "Search tickets using Freshdesk filter syntax.", { query: z.string() }, async ({ query }) => {
-    const res = await fd.get("/search/tickets", { query });
-    return text(res.ok ? res.data : errorPayload("Failed to search tickets", res));
-  });
+  tool(
+    server,
+    "search_tickets",
+    "Search tickets using Freshdesk filter syntax.",
+    { query: z.string() },
+    async ({ query }) => {
+      const res = await fd.get("/search/tickets", { query });
+      return text(res.ok ? res.data : errorPayload("Failed to search tickets", res));
+    },
+  );
 
-  tool(server, "get_ticket_conversation", "Get conversations for a ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.get(`/tickets/${ticket_id}/conversations`);
-    return text(res.ok ? res.data : errorPayload("Failed to fetch conversation", res));
-  });
+  tool(
+    server,
+    "get_ticket_conversation",
+    "Get conversations for a ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.get(`/tickets/${ticket_id}/conversations`);
+      return text(res.ok ? res.data : errorPayload("Failed to fetch conversation", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "create_ticket_reply",
     "Reply to a ticket.",
     { ticket_id: z.number().int(), reply: z.record(z.any()) },
@@ -119,7 +146,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "create_ticket_note",
     "Add a note to a ticket.",
     { ticket_id: z.number().int(), note: z.record(z.any()) },
@@ -131,7 +159,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "update_ticket_conversation",
     "Update a conversation (reply or note).",
     { conversation_id: z.number().int(), conversation: z.record(z.any()) },
@@ -144,12 +173,19 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "view_ticket_summary", "Get a ticket's summary.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.get(`/tickets/${ticket_id}/summary`);
-    return text(res.ok ? res.data : errorPayload("Failed to fetch summary", res));
-  });
+  tool(
+    server,
+    "view_ticket_summary",
+    "Get a ticket's summary.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.get(`/tickets/${ticket_id}/summary`);
+      return text(res.ok ? res.data : errorPayload("Failed to fetch summary", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "update_ticket_summary",
     "Update a ticket's summary.",
     { ticket_id: z.number().int(), body: z.string() },
@@ -159,13 +195,20 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "delete_ticket_summary", "Delete a ticket's summary.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.delete(`/tickets/${ticket_id}/summary`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete summary", res));
-  });
+  tool(
+    server,
+    "delete_ticket_summary",
+    "Delete a ticket's summary.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.delete(`/tickets/${ticket_id}/summary`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete summary", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "create_ticket_field",
     "Create a ticket field (admin).",
     { ticket_field: z.record(z.any()) },
@@ -177,12 +220,19 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "view_ticket_field", "View a ticket field.", { ticket_field_id: z.number().int() }, async ({ ticket_field_id }) => {
-    const res = await fd.get(`/admin/ticket_fields/${ticket_field_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to fetch ticket field", res));
-  });
+  tool(
+    server,
+    "view_ticket_field",
+    "View a ticket field.",
+    { ticket_field_id: z.number().int() },
+    async ({ ticket_field_id }) => {
+      const res = await fd.get(`/admin/ticket_fields/${ticket_field_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to fetch ticket field", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "update_ticket_field",
     "Update a ticket field (admin).",
     { ticket_field_id: z.number().int(), ticket_field: z.record(z.any()) },
@@ -194,13 +244,20 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "delete_ticket_field", "Delete a ticket field.", { ticket_field_id: z.number().int() }, async ({ ticket_field_id }) => {
-    const res = await fd.delete(`/admin/ticket_fields/${ticket_field_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete ticket field", res));
-  });
+  tool(
+    server,
+    "delete_ticket_field",
+    "Delete a ticket field.",
+    { ticket_field_id: z.number().int() },
+    async ({ ticket_field_id }) => {
+      const res = await fd.delete(`/admin/ticket_fields/${ticket_field_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete ticket field", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "get_field_properties",
     "Get the definition of a single ticket field by name.",
     { field_name: z.string() },
@@ -213,7 +270,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "bulk_create_tickets",
     "Bulk create up to 100 tickets.",
     { tickets: z.array(z.record(z.any())).min(1).max(100) },
@@ -233,7 +291,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "bulk_update_tickets",
     "Bulk update tickets (ids + properties or reply).",
     { bulk_action: z.record(z.any()) },
@@ -245,7 +304,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "bulk_delete_tickets",
     "Bulk delete tickets.",
     { bulk_action: z.record(z.any()) },
@@ -257,13 +317,20 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "restore_ticket", "Restore a deleted ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.put(`/tickets/${ticket_id}/restore`);
-    if (res.status === 204) return text({ success: true });
-    return text(res.ok ? res.data : errorPayload("Failed to restore ticket", res));
-  });
+  tool(
+    server,
+    "restore_ticket",
+    "Restore a deleted ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.put(`/tickets/${ticket_id}/restore`);
+      if (res.status === 204) return text({ success: true });
+      return text(res.ok ? res.data : errorPayload("Failed to restore ticket", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "list_archived_tickets",
     "List archived tickets.",
     {
@@ -276,23 +343,42 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "view_archived_ticket", "View an archived ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.get(`/tickets/archived/${ticket_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to view archived ticket", res));
-  });
+  tool(
+    server,
+    "view_archived_ticket",
+    "View an archived ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.get(`/tickets/archived/${ticket_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to view archived ticket", res));
+    },
+  );
 
-  tool(server, "delete_archived_ticket", "Permanently delete an archived ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.delete(`/tickets/archived/${ticket_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete archived ticket", res));
-  });
+  tool(
+    server,
+    "delete_archived_ticket",
+    "Permanently delete an archived ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.delete(`/tickets/archived/${ticket_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete archived ticket", res));
+    },
+  );
 
-  tool(server, "list_archived_ticket_conversations", "List conversations on an archived ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.get(`/tickets/archived/${ticket_id}/conversations`);
-    return text(res.ok ? res.data : errorPayload("Failed to list archived conversations", res));
-  });
+  tool(
+    server,
+    "list_archived_ticket_conversations",
+    "List conversations on an archived ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.get(`/tickets/archived/${ticket_id}/conversations`);
+      return text(res.ok ? res.data : errorPayload("Failed to list archived conversations", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "merge_tickets",
     "Merge tickets into a primary.",
     { merge: z.record(z.any()) },
@@ -304,7 +390,8 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "forward_ticket",
     "Forward a ticket.",
     { ticket_id: z.number().int(), forward: z.record(z.any()) },
@@ -316,23 +403,42 @@ export function registerTicketTools(server: McpServer) {
     },
   );
 
-  tool(server, "list_ticket_time_entries", "List time entries on a ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.get(`/tickets/${ticket_id}/time_entries`);
-    return text(res.ok ? res.data : errorPayload("Failed to list time entries", res));
-  });
+  tool(
+    server,
+    "list_ticket_time_entries",
+    "List time entries on a ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.get(`/tickets/${ticket_id}/time_entries`);
+      return text(res.ok ? res.data : errorPayload("Failed to list time entries", res));
+    },
+  );
 
-  tool(server, "list_ticket_satisfaction_ratings", "List satisfaction ratings on a ticket.", { ticket_id: z.number().int() }, async ({ ticket_id }) => {
-    const res = await fd.get(`/tickets/${ticket_id}/satisfaction_ratings`);
-    return text(res.ok ? res.data : errorPayload("Failed to list satisfaction ratings", res));
-  });
+  tool(
+    server,
+    "list_ticket_satisfaction_ratings",
+    "List satisfaction ratings on a ticket.",
+    { ticket_id: z.number().int() },
+    async ({ ticket_id }) => {
+      const res = await fd.get(`/tickets/${ticket_id}/satisfaction_ratings`);
+      return text(res.ok ? res.data : errorPayload("Failed to list satisfaction ratings", res));
+    },
+  );
 
-  tool(server, "delete_conversation", "Delete a conversation (reply/note).", { conversation_id: z.number().int() }, async ({ conversation_id }) => {
-    const res = await fd.delete(`/conversations/${conversation_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete conversation", res));
-  });
+  tool(
+    server,
+    "delete_conversation",
+    "Delete a conversation (reply/note).",
+    { conversation_id: z.number().int() },
+    async ({ conversation_id }) => {
+      const res = await fd.delete(`/conversations/${conversation_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete conversation", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "reply_to_forward",
     "Reply to a forwarded conversation.",
     { ticket_id: z.number().int(), reply: z.record(z.any()) },
@@ -345,14 +451,16 @@ export function registerTicketTools(server: McpServer) {
   );
 
   // Re-export of enum source/status/priority for client introspection
-  tool(server, 
+  tool(
+    server,
     "list_ticket_enums",
     "Return numeric ranges for ticket source/status/priority.",
     {},
-    async () => text({
-      source: { Email: 1, Portal: 2, Phone: 3, Chat: 7, FeedbackWidget: 9, OutboundEmail: 10 },
-      status: { Open: 2, Pending: 3, Resolved: 4, Closed: 5 },
-      priority: { Low: 1, Medium: 2, High: 3, Urgent: 4 },
-    }),
+    async () =>
+      text({
+        source: { Email: 1, Portal: 2, Phone: 3, Chat: 7, FeedbackWidget: 9, OutboundEmail: 10 },
+        status: { Open: 2, Pending: 3, Resolved: 4, Closed: 5 },
+        priority: { Low: 1, Medium: 2, High: 3, Urgent: 4 },
+      }),
   );
 }

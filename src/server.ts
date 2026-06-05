@@ -1,41 +1,41 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { registerTicketTools } from "./tools/tickets.js";
-import { registerContactTools } from "./tools/contacts.js";
-import { registerAgentTools, registerGroupTools } from "./tools/agents.js";
-import { registerCannedTools } from "./tools/canned.js";
-import { registerSolutionTools } from "./tools/solutions.js";
-import { registerCompanyTools } from "./tools/companies.js";
+import { registerPrompts } from "./prompts.js";
 import {
-  registerSkillTools,
-  registerRoleTools,
-  registerProductTools,
+  registerAccountTools,
   registerBusinessHoursTools,
-  registerSlaTools,
   registerEmailConfigTools,
   registerMailboxTools,
+  registerProductTools,
+  registerRoleTools,
   registerSettingsTools,
-  registerAccountTools,
+  registerSkillTools,
+  registerSlaTools,
   registerThreadTools,
   registerTimeEntryTools,
 } from "./tools/admin_misc.js";
+import { registerAgentTools, registerGroupTools } from "./tools/agents.js";
+import { registerCannedTools } from "./tools/canned.js";
+import { registerCompanyTools } from "./tools/companies.js";
+import { registerContactTools } from "./tools/contacts.js";
 import {
-  registerDiscussionTools,
-  registerSurveyTools,
   registerAutomationTools,
-  registerScenarioTools,
-  registerCustomObjectTools,
-  registerFsmTools,
-  registerOutboundTools,
-  registerJobTools,
   registerAvailabilityTools,
+  registerCustomObjectTools,
+  registerDiscussionTools,
+  registerFsmTools,
+  registerJobTools,
   registerOmnichannelTools,
+  registerOutboundTools,
+  registerScenarioTools,
+  registerSurveyTools,
 } from "./tools/extras.js";
-import { registerPrompts } from "./prompts.js";
+import { registerSolutionTools } from "./tools/solutions.js";
+import { registerTicketTools } from "./tools/tickets.js";
 
 export function buildServer(): McpServer {
   const server = new McpServer(
     { name: "freshdesk-mcp", version: "1.0.0" },
-    { capabilities: { tools: {}, prompts: {} } }
+    { capabilities: { tools: {}, prompts: {} } },
   );
 
   registerTicketTools(server);

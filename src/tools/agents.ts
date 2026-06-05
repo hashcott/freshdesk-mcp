@@ -1,13 +1,8 @@
-import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { fd, errorPayload } from "../freshdesk.js";
-import { text, validate, tool } from "../util.js";
-import {
-  AgentCreate,
-  AgentUpdate,
-  GroupCreate,
-  GroupUpdate,
-} from "../schemas/index.js";
+import { z } from "zod";
+import { errorPayload, fd } from "../freshdesk.js";
+import { AgentCreate, AgentUpdate, GroupCreate, GroupUpdate } from "../schemas/index.js";
+import { text, tool, validate } from "../util.js";
 
 const pageArgs = {
   page: z.number().int().min(1).optional().default(1),
@@ -20,12 +15,19 @@ export function registerAgentTools(server: McpServer) {
     return text(res.ok ? res.data : errorPayload("Failed to list agents", res));
   });
 
-  tool(server, "view_agent", "View an agent.", { agent_id: z.number().int() }, async ({ agent_id }) => {
-    const res = await fd.get(`/agents/${agent_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to fetch agent", res));
-  });
+  tool(
+    server,
+    "view_agent",
+    "View an agent.",
+    { agent_id: z.number().int() },
+    async ({ agent_id }) => {
+      const res = await fd.get(`/agents/${agent_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to fetch agent", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "create_agent",
     "Create an agent.",
     { agent: z.record(z.any()) },
@@ -37,7 +39,8 @@ export function registerAgentTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "update_agent",
     "Update an agent.",
     { agent_id: z.number().int(), agent: z.record(z.any()) },
@@ -49,23 +52,36 @@ export function registerAgentTools(server: McpServer) {
     },
   );
 
-  tool(server, "search_agents", "Autocomplete agents.", { query: z.string() }, async ({ query }) => {
-    const res = await fd.get("/agents/autocomplete", { term: query });
-    return text(res.ok ? res.data : errorPayload("Failed to search agents", res));
-  });
+  tool(
+    server,
+    "search_agents",
+    "Autocomplete agents.",
+    { query: z.string() },
+    async ({ query }) => {
+      const res = await fd.get("/agents/autocomplete", { term: query });
+      return text(res.ok ? res.data : errorPayload("Failed to search agents", res));
+    },
+  );
 
   tool(server, "view_current_agent", "View the currently authenticated agent.", {}, async () => {
     const res = await fd.get("/agents/me");
     return text(res.ok ? res.data : errorPayload("Failed to view current agent", res));
   });
 
-  tool(server, "delete_agent", "Deactivate / delete an agent.", { agent_id: z.number().int() }, async ({ agent_id }) => {
-    const res = await fd.delete(`/agents/${agent_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete agent", res));
-  });
+  tool(
+    server,
+    "delete_agent",
+    "Deactivate / delete an agent.",
+    { agent_id: z.number().int() },
+    async ({ agent_id }) => {
+      const res = await fd.delete(`/agents/${agent_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete agent", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "bulk_create_agents",
     "Bulk create agents.",
     { agents: z.array(z.record(z.any())).min(1) },
@@ -92,7 +108,8 @@ export function registerGroupTools(server: McpServer) {
     return text(res.ok ? res.data : errorPayload("Failed to list groups", res));
   });
 
-  tool(server, 
+  tool(
+    server,
     "create_group",
     "Create a group.",
     { group: z.record(z.any()) },
@@ -104,12 +121,19 @@ export function registerGroupTools(server: McpServer) {
     },
   );
 
-  tool(server, "view_group", "View a group.", { group_id: z.number().int() }, async ({ group_id }) => {
-    const res = await fd.get(`/groups/${group_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to view group", res));
-  });
+  tool(
+    server,
+    "view_group",
+    "View a group.",
+    { group_id: z.number().int() },
+    async ({ group_id }) => {
+      const res = await fd.get(`/groups/${group_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to view group", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "update_group",
     "Update a group.",
     { group_id: z.number().int(), group: z.record(z.any()) },
@@ -121,11 +145,17 @@ export function registerGroupTools(server: McpServer) {
     },
   );
 
-  tool(server, "delete_group", "Delete a group.", { group_id: z.number().int() }, async ({ group_id }) => {
-    const res = await fd.delete(`/groups/${group_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete group", res));
-  });
+  tool(
+    server,
+    "delete_group",
+    "Delete a group.",
+    { group_id: z.number().int() },
+    async ({ group_id }) => {
+      const res = await fd.delete(`/groups/${group_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete group", res));
+    },
+  );
 
   // Admin groups (SLA-aware)
   tool(server, "list_admin_groups", "List admin groups.", pageArgs, async ({ page, per_page }) => {
@@ -133,12 +163,19 @@ export function registerGroupTools(server: McpServer) {
     return text(res.ok ? res.data : errorPayload("Failed to list admin groups", res));
   });
 
-  tool(server, "view_admin_group", "View an admin group.", { group_id: z.number().int() }, async ({ group_id }) => {
-    const res = await fd.get(`/admin/groups/${group_id}`);
-    return text(res.ok ? res.data : errorPayload("Failed to view admin group", res));
-  });
+  tool(
+    server,
+    "view_admin_group",
+    "View an admin group.",
+    { group_id: z.number().int() },
+    async ({ group_id }) => {
+      const res = await fd.get(`/admin/groups/${group_id}`);
+      return text(res.ok ? res.data : errorPayload("Failed to view admin group", res));
+    },
+  );
 
-  tool(server, 
+  tool(
+    server,
     "create_admin_group",
     "Create an admin group.",
     { group: z.record(z.any()) },
@@ -150,7 +187,8 @@ export function registerGroupTools(server: McpServer) {
     },
   );
 
-  tool(server, 
+  tool(
+    server,
     "update_admin_group",
     "Update an admin group.",
     { group_id: z.number().int(), group: z.record(z.any()) },
@@ -162,9 +200,15 @@ export function registerGroupTools(server: McpServer) {
     },
   );
 
-  tool(server, "delete_admin_group", "Delete an admin group.", { group_id: z.number().int() }, async ({ group_id }) => {
-    const res = await fd.delete(`/admin/groups/${group_id}`);
-    if (res.status === 204) return text({ success: true });
-    return text(errorPayload("Failed to delete admin group", res));
-  });
+  tool(
+    server,
+    "delete_admin_group",
+    "Delete an admin group.",
+    { group_id: z.number().int() },
+    async ({ group_id }) => {
+      const res = await fd.delete(`/admin/groups/${group_id}`);
+      if (res.status === 204) return text({ success: true });
+      return text(errorPayload("Failed to delete admin group", res));
+    },
+  );
 }

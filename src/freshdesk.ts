@@ -2,9 +2,7 @@ const FRESHDESK_API_KEY = process.env.FRESHDESK_API_KEY;
 const FRESHDESK_DOMAIN = process.env.FRESHDESK_DOMAIN;
 
 if (!FRESHDESK_API_KEY || !FRESHDESK_DOMAIN) {
-  console.error(
-    "[freshdesk-mcp] FRESHDESK_API_KEY and FRESHDESK_DOMAIN env vars are required"
-  );
+  console.error("[freshdesk-mcp] FRESHDESK_API_KEY and FRESHDESK_DOMAIN env vars are required");
 }
 
 const authHeader = `Basic ${Buffer.from(`${FRESHDESK_API_KEY}:X`).toString("base64")}`;
@@ -41,7 +39,7 @@ export interface FreshdeskResult<T = any> {
 async function request<T = any>(
   method: string,
   path: string,
-  opts: { query?: Record<string, any>; body?: any } = {}
+  opts: { query?: Record<string, any>; body?: any } = {},
 ): Promise<FreshdeskResult<T>> {
   const url = new URL(`${baseUrl}${path}`);
   if (opts.query) {
@@ -72,12 +70,9 @@ async function request<T = any>(
 }
 
 export const fd = {
-  get: <T = any>(path: string, query?: Record<string, any>) =>
-    request<T>("GET", path, { query }),
-  post: <T = any>(path: string, body?: any) =>
-    request<T>("POST", path, { body }),
-  put: <T = any>(path: string, body?: any) =>
-    request<T>("PUT", path, { body }),
+  get: <T = any>(path: string, query?: Record<string, any>) => request<T>("GET", path, { query }),
+  post: <T = any>(path: string, body?: any) => request<T>("POST", path, { body }),
+  put: <T = any>(path: string, body?: any) => request<T>("PUT", path, { body }),
   delete: <T = any>(path: string) => request<T>("DELETE", path),
 };
 
