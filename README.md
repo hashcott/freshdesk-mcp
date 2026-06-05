@@ -50,21 +50,19 @@ This server exposes the full Freshdesk public API (https://developers.freshdesk.
 ## Quick Start
 
 ```bash
-# 1. Install + build
-git clone <this-repo>
-cd freshdesk-mcp
-npm install
-npm run build
-
-# 2. Configure
+# 1. Configure
 export FRESHDESK_API_KEY=your_api_key
 export FRESHDESK_DOMAIN=yourcompany.freshdesk.com
 
-# 3. Run (stdio, default)
-node dist/index.js
+# 2. Run via npx (no install needed)
+npx freshdesk-mcp
+
+# OR install globally and run
+npm install -g freshdesk-mcp
+freshdesk-mcp
 
 # OR run as HTTP server
-MCP_TRANSPORT=http PORT=3000 node dist/index.js
+MCP_TRANSPORT=http PORT=3000 npx freshdesk-mcp
 # → POST  http://localhost:3000/mcp
 # → GET   http://localhost:3000/health
 ```
@@ -75,12 +73,32 @@ MCP_TRANSPORT=http PORT=3000 node dist/index.js
 
 Requires **Node.js ≥ 18** (uses the native `fetch` API).
 
+### From npm (recommended)
+
 ```bash
+# Install globally
+npm install -g freshdesk-mcp
+
+# Run directly
+freshdesk-mcp
+```
+
+### Using npx (no install needed)
+
+```bash
+npx freshdesk-mcp
+```
+
+### From source
+
+```bash
+git clone <this-repo>
+cd freshdesk-mcp
 npm install
 npm run build
 ```
 
-Build artifacts land in `dist/`. The package is executable as `node dist/index.js` or via the `bin` shortcut `freshdesk-mcp` when installed.
+Build artifacts land in `dist/`. The package is executable as `node dist/index.js` or via the `bin` shortcut `freshdesk-mcp` when installed globally.
 
 ---
 
@@ -161,8 +179,24 @@ docker run --rm -p 3000:3000 \
 {
   "mcpServers": {
     "freshdesk": {
-      "command": "node",
-      "args": ["/absolute/path/to/freshdesk-mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "freshdesk-mcp"],
+      "env": {
+        "FRESHDESK_API_KEY": "xxx",
+        "FRESHDESK_DOMAIN": "acme.freshdesk.com"
+      }
+    }
+  }
+}
+```
+
+If installed globally via `npm install -g freshdesk-mcp`:
+
+```json
+{
+  "mcpServers": {
+    "freshdesk": {
+      "command": "freshdesk-mcp",
       "env": {
         "FRESHDESK_API_KEY": "xxx",
         "FRESHDESK_DOMAIN": "acme.freshdesk.com"
