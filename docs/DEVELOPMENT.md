@@ -260,7 +260,29 @@ Pass intentionally bad input and confirm Zod rejects it before any HTTP call:
 
 ## Releasing
 
-1. Update `version` in `package.json`.
-2. Update `CHANGELOG.md` — move "Unreleased" entries to a new `[x.y.z] - YYYY-MM-DD` section.
-3. Tag the commit: `git tag vX.Y.Z && git push --tags`.
-4. (Optional) `npm publish` — make sure `dist/` is freshly built and `files` in `package.json` lists what should ship.
+Releases are fully automated via [release-please](https://github.com/googleapis/release-please) — **do not** manually bump versions, edit `CHANGELOG.md`, or push tags.
+
+### How it works
+
+1. Every commit to `main` triggers the **Release** workflow (`.github/workflows/release-please.yml`).
+2. `release-please` scans commit messages since the last release and, if there are releasable changes (`feat:`, `fix:`, `perf:`, breaking), opens or updates a **Release PR** that:
+   - Bumps `version` in `package.json`
+   - Generates / updates `CHANGELOG.md`
+3. When a maintainer **merges the Release PR**, the workflow automatically:
+   - Creates the GitHub release and git tag (`vX.Y.Z`)
+   - Publishes the package to npm with provenance attestation
+
+### Commit message conventions
+
+release-please derives the next version from [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Commit prefix | Version bump |
+|---|---|
+| `fix:` | patch (1.0.**1**) |
+| `feat:` | minor (1.**1**.0) |
+| `feat!:` or `BREAKING CHANGE:` footer | major (**2**.0.0) |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:` | no release |
+
+### Manual publish (emergency / beta)
+
+Use the **Publish (manual)** workflow in GitHub Actions (`workflow_dispatch`) and set the desired `dist-tag` (e.g. `beta`, `next`). This should only be needed for out-of-band releases.

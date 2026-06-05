@@ -1,70 +1,72 @@
-name: Release Please
+name: Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release-please:
+    name: Create release PR
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      version: ${{ steps.rp.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v4
-        id: release
+        id: rp
         with:
-          release-type: node
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
-          
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      version: ${{ steps.release.outputs.version }}
-      
-  # Trigger npm publish when release is created
+
   publish:
+    name: Publish to npm
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: needs.release-please.outputs.release_created == 'true'
     runs-on: ubuntu-latest
-    
     permissions:
       contents: read
       id-token: write
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Use Node.js 22.x
-      uses: actions/setup-node@v4
-      with:
-        node-version: 22.x
-        cache: 'npm'
-        registry-url: 'https://registry.npmjs.org'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: https://registry.npmjs.org
 
-    - name: Install dependencies
-      run: npm ci
+      - run: npm ci
 
-    - name: Build
-      run: npm run build
+      - name: Build
+        run: npm run build
 
-    - name: Verify build output
-      run: |
-        test -f dist/index.js || exit 1
-        echo "✓ Build artifacts verified"
+      - name: Verify dist
+        run: test -f dist/index.js && echo "✓ dist/index.js present"
 
-    - name: Publish to npm
-      run: npm publish --access public
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-    - name: Verify publication
-      run: |
-        PACKAGE_NAME=$(node -p "require('./package.json').name")
-        PACKAGE_VERSION=${{ needs.release-please.outputs.version }}
-        sleep 3
-        npm view $PACKAGE_NAME@$PACKAGE_VERSION || exit 1
-        echo "✓ Successfully published $PACKAGE_NAME@$PACKAGE_VERSION"
+      - name: Confirm publication
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: |
+          PACKAGE=$(node -p "require('./package.json').name")
+          for i in 1 2 3 4 5; do
+            if npm view "$PACKAGE@$VERSION" version 2>/dev/null; then
+              echo "✓ $PACKAGE@$VERSION published successfully"
+              exit 0
+            fi
+            echo "Attempt $i/5 — waiting 10s..."
+            sleep 10
+          done
+          echo "✗ Could not confirm publication of $PACKAGE@$VERSION" && exit 1

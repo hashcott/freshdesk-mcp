@@ -1,52 +1,56 @@
-name: Publish to npm (Manual)
+name: Publish (manual)
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'npm dist-tag (e.g., latest, beta, next)'
+        description: npm dist-tag (e.g. latest, beta, next)
         required: true
-        default: 'latest'
+        default: latest
+
+concurrency:
+  group: publish-manual
+  cancel-in-progress: false
 
 jobs:
   publish:
+    name: Publish to npm (${{ inputs.tag }})
     runs-on: ubuntu-latest
-    
     permissions:
       contents: read
       id-token: write
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Use Node.js 22.x
-      uses: actions/setup-node@v4
-      with:
-        node-version: 22.x
-        cache: 'npm'
-        registry-url: 'https://registry.npmjs.org'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: https://registry.npmjs.org
 
-    - name: Install dependencies
-      run: npm ci
+      - run: npm ci
 
-    - name: Build
-      run: npm run build
+      - name: Build
+        run: npm run build
 
-    - name: Verify build output
-      run: |
-        test -f dist/index.js || exit 1
-        echo "✓ Build artifacts verified"
+      - name: Verify dist
+        run: test -f dist/index.js && echo "✓ dist/index.js present"
 
-    - name: Publish to npm
-      run: npm publish --access public --tag ${{ github.event.inputs.tag }}
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Publish
+        run: npm publish --access public --provenance --tag ${{ inputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-    - name: Verify publication
-      run: |
-        PACKAGE_NAME=$(node -p "require('./package.json').name")
-        PACKAGE_VERSION=$(node -p "require('./package.json').version")
-        sleep 3
-        npm view $PACKAGE_NAME@$PACKAGE_VERSION || exit 1
-        echo "✓ Successfully published $PACKAGE_NAME@$PACKAGE_VERSION"
+      - name: Confirm publication
+        run: |
+          PACKAGE=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          for i in 1 2 3 4 5; do
+            if npm view "$PACKAGE@$VERSION" version 2>/dev/null; then
+              echo "✓ $PACKAGE@$VERSION published successfully"
+              exit 0
+            fi
+            echo "Attempt $i/5 — waiting 10s..."
+            sleep 10
+          done
+          echo "✗ Could not confirm publication of $PACKAGE@$VERSION" && exit 1

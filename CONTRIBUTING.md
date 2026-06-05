@@ -84,15 +84,26 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#adding-a-new-tool) for detailed gu
 
 ## Commit Messages
 
-Use clear, descriptive commit messages:
+This project uses [Conventional Commits](https://www.conventionalcommits.org/). Commit messages drive **automated versioning** via release-please — using the right prefix matters.
 
 ```
-feat: add support for custom object records
-fix: correct pagination parsing in list_tickets
-docs: update API.md with new time entry parameters
-refactor: extract common validation logic
-test: add integration tests for contact merge
+feat: add support for custom object records       → triggers minor bump
+fix: correct pagination parsing in list_tickets   → triggers patch bump
+feat!: rename tool parameters                     → triggers major bump (breaking)
+docs: update API.md with new time entry params    → no release
+refactor: extract common validation logic         → no release
+test: add smoke test for HTTP transport           → no release
+ci: cache npm in workflow                         → no release
 ```
+
+| Prefix | Version bump | When to use |
+|---|---|---|
+| `feat:` | minor | New tool, new parameter, new behavior |
+| `fix:` | patch | Bug fix, incorrect response handling |
+| `feat!:` / `BREAKING CHANGE:` footer | major | Renamed/removed tools or parameters |
+| `docs:`, `chore:`, `refactor:`, `test:`, `ci:`, `build:` | none | Non-user-facing changes |
+
+**Do not** manually update `package.json` version or `CHANGELOG.md` — release-please handles both automatically when a Release PR is merged.
 
 ## Testing
 
