@@ -2,6 +2,8 @@
 
 > Model Context Protocol (MCP) server for the **Freshdesk** REST API — written in TypeScript, with full Zod validation, supporting both stdio and Streamable HTTP transports.
 
+[![npm](https://img.shields.io/npm/v/freshdesk-mcp.svg)](https://www.npmjs.com/package/freshdesk-mcp)
+[![npm downloads](https://img.shields.io/npm/dw/freshdesk-mcp.svg)](https://www.npmjs.com/package/freshdesk-mcp)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue.svg)](https://www.typescriptlang.org/)
 [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-1.29-purple.svg)](https://github.com/modelcontextprotocol/typescript-sdk)
