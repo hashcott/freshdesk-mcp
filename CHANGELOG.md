@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0](https://github.com/hashcott/freshdesk-mcp/compare/freshdesk-mcp-v1.0.0...freshdesk-mcp-v1.1.0) (2026-06-05)
+
+
+### Features
+
+* implement Freshdesk MCP server with 194 tools ([178269d](https://github.com/hashcott/freshdesk-mcp/commit/178269d2d6fe2c1bc19fc6ab0b47201637cfedc7))
+
+
+### Documentation
+
+* add comprehensive project documentation ([3fa8135](https://github.com/hashcott/freshdesk-mcp/commit/3fa81355502cfb9c264f56dcb6d7025d6205d497))
+* add npm version and downloads badges to README ([ce41532](https://github.com/hashcott/freshdesk-mcp/commit/ce415326b10a94df5f347a0bce436fe4eeac42b9))
+* add npm/npx installation and usage instructions ([4a83d8a](https://github.com/hashcott/freshdesk-mcp/commit/4a83d8ab8f6fe24cccd1cac93a3ffc2f7eec812f))
+* add OSS standard files ([a0f12d5](https://github.com/hashcott/freshdesk-mcp/commit/a0f12d52d27a2fa0bb14c0f2b5bcd857c5eb88dd))
+* enhance README layout and content for better clarity ([93ba1eb](https://github.com/hashcott/freshdesk-mcp/commit/93ba1ebb8b7e9a675e5fd782b392f7852b28f8ae))
+
+
+### Continuous Integration
+
+* add release-please for automated versioning ([d7775a7](https://github.com/hashcott/freshdesk-mcp/commit/d7775a7755a8cce05d18e2d91d5436a1179d59b9))
+
 ## [Unreleased]
 
 ### Added
