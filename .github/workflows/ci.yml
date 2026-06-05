@@ -26,7 +26,16 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
 
-      - run: npm ci
+      - name: Install dependencies (with retries)
+        run: |
+          for attempt in 1 2 3; do
+            npm ci && break
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            echo "npm ci failed (attempt $attempt), retrying in 10s..."
+            sleep 10
+          done
 
       - name: Build
         run: npm run build
