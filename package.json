@@ -29,14 +29,14 @@
     "helpdesk",
     "typescript"
   ],
-  "author": "",
+  "author": "hashcott",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/hashcott/freshdesk-mcp.git"
   },
   "bugs": {
-    "url": ""
+    "url": "https://github.com/hashcott/freshdesk-mcp/issues"
   },
   "engines": {
     "node": ">=18.0.0"
