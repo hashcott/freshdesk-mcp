@@ -174,9 +174,11 @@ docker run --rm -p 3000:3000 \
 
 ## Client Integration
 
-### Claude Desktop / Claude Code
+All stdio-based MCP clients accept the same shape: a `command` + `args` + `env`. The examples below assume you've either installed globally (`npm install -g freshdesk-mcp`) or you let `npx -y freshdesk-mcp` fetch on demand. Replace credentials with your own.
 
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%/Claude/claude_desktop_config.json` (Windows):
+### Claude Desktop
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) · `%APPDATA%/Claude/claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -193,13 +195,27 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-If installed globally via `npm install -g freshdesk-mcp`:
+### Claude Code (CLI)
+
+```bash
+claude mcp add freshdesk \
+  --env FRESHDESK_API_KEY=xxx \
+  --env FRESHDESK_DOMAIN=acme.freshdesk.com \
+  -- npx -y freshdesk-mcp
+```
+
+Or edit `~/.claude.json` (project-level) → `mcpServers` with the same shape as Claude Desktop above.
+
+### Cursor
+
+`~/.cursor/mcp.json` (global) or `<project>/.cursor/mcp.json` (per project):
 
 ```json
 {
   "mcpServers": {
     "freshdesk": {
-      "command": "freshdesk-mcp",
+      "command": "npx",
+      "args": ["-y", "freshdesk-mcp"],
       "env": {
         "FRESHDESK_API_KEY": "xxx",
         "FRESHDESK_DOMAIN": "acme.freshdesk.com"
@@ -209,13 +225,96 @@ If installed globally via `npm install -g freshdesk-mcp`:
 }
 ```
 
-### Cursor / Continue / other stdio clients
+Enable it under **Settings → Cursor Settings → MCP**.
 
-Same `command` + `env` shape — see your client's MCP server config docs.
+### OpenAI Codex CLI
 
-### Remote / HTTP
+`~/.codex/config.toml`:
 
-Point your client at `http://your-host:3000/mcp` (or behind a reverse proxy). Sessions are created on the first `POST /mcp` with an `initialize` body; the server returns an `mcp-session-id` header that the client must echo on every subsequent request.
+```toml
+[mcp_servers.freshdesk]
+command = "npx"
+args = ["-y", "freshdesk-mcp"]
+env = { FRESHDESK_API_KEY = "xxx", FRESHDESK_DOMAIN = "acme.freshdesk.com" }
+```
+
+### Windsurf (Codeium)
+
+`~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "freshdesk": {
+      "command": "npx",
+      "args": ["-y", "freshdesk-mcp"],
+      "env": {
+        "FRESHDESK_API_KEY": "xxx",
+        "FRESHDESK_DOMAIN": "acme.freshdesk.com"
+      }
+    }
+  }
+}
+```
+
+### Continue
+
+`~/.continue/config.json` (or `.continue/config.json` in a workspace) under the `mcpServers` array:
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "freshdesk",
+      "command": "npx",
+      "args": ["-y", "freshdesk-mcp"],
+      "env": {
+        "FRESHDESK_API_KEY": "xxx",
+        "FRESHDESK_DOMAIN": "acme.freshdesk.com"
+      }
+    }
+  ]
+}
+```
+
+### Zed
+
+In Zed's `settings.json` under `context_servers`:
+
+```json
+{
+  "context_servers": {
+    "freshdesk": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "freshdesk-mcp"],
+        "env": {
+          "FRESHDESK_API_KEY": "xxx",
+          "FRESHDESK_DOMAIN": "acme.freshdesk.com"
+        }
+      }
+    }
+  }
+}
+```
+
+### Generic stdio client
+
+Any client that follows the [MCP stdio transport spec](https://modelcontextprotocol.io/specification#stdio-transport) can spawn:
+
+```bash
+FRESHDESK_API_KEY=xxx FRESHDESK_DOMAIN=acme.freshdesk.com npx -y freshdesk-mcp
+```
+
+### Remote / HTTP (Streamable HTTP)
+
+For hosted setups (web agents, multi-user gateways), run the server in HTTP mode and point clients at the `/mcp` endpoint:
+
+```bash
+MCP_TRANSPORT=http PORT=3000 npx -y freshdesk-mcp
+```
+
+Sessions begin with `POST /mcp` containing an `initialize` body; the server returns an `mcp-session-id` header that the client must echo on every subsequent request. Run behind an authenticated reverse proxy — the server itself has no built-in auth.
 
 ---
 
