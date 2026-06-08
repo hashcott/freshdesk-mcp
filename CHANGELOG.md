@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2](https://github.com/hashcott/freshdesk-mcp/compare/freshdesk-mcp-v1.1.1...freshdesk-mcp-v1.1.2) (2026-06-08)
+
+
+### Documentation
+
+* update README and API documentation for enhanced clarity and structure ([f074b9b](https://github.com/hashcott/freshdesk-mcp/commit/f074b9bdf2841e2341730628485d85b0956fd2f8))
+
 ## [1.1.1](https://github.com/hashcott/freshdesk-mcp/compare/freshdesk-mcp-v1.1.0...freshdesk-mcp-v1.1.1) (2026-06-05)
 
 
