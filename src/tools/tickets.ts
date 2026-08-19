@@ -299,7 +299,7 @@ export function registerTicketTools(server: McpServer) {
     async ({ bulk_action }) => {
       const v = validate(TicketBulkUpdateAction, bulk_action);
       if (!v.ok) return v.reply;
-      const res = await fd.put("/tickets/bulk_update", { bulk_action: v.data });
+      const res = await fd.post("/tickets/bulk_update", { bulk_action: v.data });
       return text(res.ok ? res.data : errorPayload("Failed to bulk update tickets", res));
     },
   );
