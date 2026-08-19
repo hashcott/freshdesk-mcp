@@ -201,7 +201,7 @@ Same shape as `TicketCreate`; **all fields optional**, refinements removed (Fres
 
 ### Bulk Update Tickets — `TicketBulkUpdateAction`
 
-`PUT /api/v2/tickets/bulk_update` · [Freshdesk docs ↗](https://developers.freshdesk.com/api/#bulk_update_tickets)
+`POST /api/v2/tickets/bulk_update` · [Freshdesk docs ↗](https://developers.freshdesk.com/api/#bulk_update_tickets)
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
