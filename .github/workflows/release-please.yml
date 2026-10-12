@@ -47,11 +47,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No registry-url: setup-node would write a placeholder NODE_AUTH_TOKEN into .npmrc,
+      # which npm then sends instead of exchanging the OIDC token (publish fails with E404).
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       # Trusted publishing needs npm >= 11.5.1 (Node 22 ships npm 10).
       - name: Upgrade npm
@@ -73,12 +74,13 @@ jobs:
         run: |
           PACKAGE=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
-          for i in 1 2 3 4 5; do
+          # npm can take several minutes to make a new version visible ("Your package is being processed").
+          for i in $(seq 1 30); do
             if npm view "$PACKAGE@$VERSION" version 2>/dev/null; then
               echo "✓ $PACKAGE@$VERSION published successfully"
               exit 0
             fi
-            echo "Attempt $i/5 — waiting 10s..."
-            sleep 10
+            echo "Attempt $i/30 — waiting 30s..."
+            sleep 30
           done
           echo "✗ Could not confirm publication of $PACKAGE@$VERSION" && exit 1
