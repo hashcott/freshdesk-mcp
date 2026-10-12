@@ -47,11 +47,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No registry-url: setup-node would write a placeholder NODE_AUTH_TOKEN into .npmrc,
+      # which npm then sends instead of exchanging the OIDC token (publish fails with E404).
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-          registry-url: https://registry.npmjs.org
 
       # Trusted publishing needs npm >= 11.5.1 (Node 22 ships npm 10).
       - name: Upgrade npm
@@ -67,7 +68,7 @@ jobs:
 
       # No NODE_AUTH_TOKEN: npm authenticates via OIDC as the trusted publisher configured on npmjs.com.
       - name: Publish
-        run: npm publish --access public --provenance --tag "${{ inputs.tag || 'latest' }}"
+        run: npm publish --access public --provenance --tag "${{ inputs.tag || 'latest' }}" --loglevel verbose
 
       - name: Confirm publication
         run: |
