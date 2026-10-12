@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1](https://github.com/hashcott/freshdesk-mcp/compare/freshdesk-mcp-v2.0.0...freshdesk-mcp-v2.0.1) (2026-10-12)
+
+
+### Continuous Integration
+
+* drop setup-node registry-url so npm uses OIDC ([efd9376](https://github.com/hashcott/freshdesk-mcp/commit/efd93761b028a15d8ea24dc548c7760b2620694f))
+* fix npm trusted publishing (drop setup-node registry-url) ([5aa2867](https://github.com/hashcott/freshdesk-mcp/commit/5aa2867f87aec627812b998d544672d0537b0df3))
+* publish to npm via trusted publishing (OIDC) ([cec6aaa](https://github.com/hashcott/freshdesk-mcp/commit/cec6aaaefd5b749ef9db4c6f2c2a0a140f6a4fff))
+* publish to npm via trusted publishing (OIDC) ([db0c214](https://github.com/hashcott/freshdesk-mcp/commit/db0c2142527ffe817d4691d403776a4d017a7103))
+* wait up to 15 min for npm to expose a new version ([1c96229](https://github.com/hashcott/freshdesk-mcp/commit/1c9622951ca82210d80dc7d74e63adeec5bef3e4))
+
 ## [2.0.0](https://github.com/hashcott/freshdesk-mcp/compare/freshdesk-mcp-v1.1.1...freshdesk-mcp-v2.0.0) (2026-10-12)
 
 
