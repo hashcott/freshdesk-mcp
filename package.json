@@ -1,7 +1,7 @@
 {
   "name": "freshdesk-mcp",
   "version": "2.0.0",
-  "description": "MCP server for Freshdesk (TypeScript) — supports stdio and Streamable HTTP transports",
+  "description": "MCP server for Freshdesk (TypeScript) \u2014 supports stdio and Streamable HTTP transports",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -20,7 +20,8 @@
     "lint:fix": "biome check --write src/",
     "format": "biome format --write src/",
     "test": "npm run build && node --test test/*.test.mjs",
-    "docs:api": "node scripts/gen-api-docs.mjs"
+    "docs:api": "node scripts/gen-api-docs.mjs",
+    "extract": "node scripts/extract-file.mjs"
   },
   "files": [
     "dist",
@@ -51,14 +52,25 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@kenjiuno/msgreader": "1.28.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "express": "^4.21.2",
+    "fflate": "0.8.3",
+    "mammoth": "1.13.0",
+    "papaparse": "5.5.3",
+    "pdfjs-dist": "4.4.168",
+    "postal-mime": "2.4.4",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.5",
+    "@types/papaparse": "^5.5.2",
     "typescript": "^5.7.2"
+  },
+  "overrides": {
+    "canvas": "npm:@favware/skip-dependency@1.2.2",
+    "argparse": "2.0.1"
   }
 }

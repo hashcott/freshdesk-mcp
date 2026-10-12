@@ -1,6 +1,24 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import {
+  ANIMATED_GIF_HANDLING,
+  Budget,
+  classifyByName,
+  DISABLED_HANDLING,
+  enforceResponseSize,
+  extractAny,
+  HANDLING,
+  isAnimatedGif,
+  kindEnabled,
+  MAX_RESPONSE_BYTES,
+  MIN_IMAGE_DIMENSION,
+  mergeTextBlocks,
+  sniffSupportedImage,
+  UNSUPPORTED_IMAGE,
+  UNTRUSTED_NOTICE,
+  willAnalyse,
+} from "../extract.js";
 import { errorPayload, fd } from "../freshdesk.js";
 import { text, tool } from "../util.js";
 import { fetchConversations } from "./tickets.js";
@@ -18,6 +36,10 @@ export const allowedHosts = (process.env.FRESHDESK_ATTACHMENT_HOSTS ?? DEFAULT_H
 const MAX_FILE_BYTES = Number(process.env.FRESHDESK_MAX_ATTACHMENT_BYTES) || 5 * 1024 * 1024;
 const MAX_TOTAL_BYTES = MAX_FILE_BYTES * 4; // ponytail: fixed per-call budget, add an env var if anyone needs it
 const MAX_REDIRECTS = 3;
+
+// MCP clients reject large tool results (Claude Desktop at about 1 MB), so every response of
+// these tools is kept under MAX_RESPONSE_BYTES (FRESHDESK_MAX_RESPONSE_BYTES), see extract.ts.
+export { MAX_RESPONSE_BYTES };
 
 export function isAllowedUrl(raw: string): boolean {
   let u: URL;
@@ -40,11 +62,16 @@ export async function download(
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!isAllowedUrl(current))
       return { ok: false, reason: `host not allowed: ${hostOf(current)}` };
-    let res: Response;
-    try {
-      res = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
-    } catch (e) {
-      return { ok: false, reason: `network error: ${(e as Error).message}` };
+    let res: Response | undefined;
+    // One retry on network errors: servers close idle keep-alive connections, and reusing one
+    // fails at once. Timeouts are not retried.
+    for (let attempt = 1; !res; attempt++) {
+      try {
+        res = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
+      } catch (e) {
+        if (attempt >= 2 || (e as Error).name === "TimeoutError")
+          return { ok: false, reason: `network error: ${(e as Error).message}` };
+      }
     }
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get("location");
@@ -90,11 +117,19 @@ const hostOf = (raw: string) => {
 
 // ─── Content helpers ──────────────────────────────
 
-const TEXT_EXT = /\.(txt|log|json|xml|csv|tsv|ya?ml|md|ini|conf|cfg|html?|js|ts|py|sql|sh)$/i;
+const TEXT_EXT = /\.(txt|log|json|xml|csv|tsv|ya?ml|md|ini|conf|cfg|html?|js|ts|py|sql|sh|har)$/i;
+// Matched on the subtype (application/json, application/x-yaml) or the +json / +xml suffix:
+// Office Open XML types contain "xml" inside their name (wordprocessingml) but are zip files.
+const TEXT_TYPE =
+  /^application\/(?:x-)?(?:json|xml|yaml|csv|javascript|sh|sql|ndjson)$|\+(?:json|xml)$/;
 export const isTextual = (contentType: string, name = "") =>
-  contentType.startsWith("text/") ||
-  /(json|xml|yaml|csv|javascript|x-sh|sql)/.test(contentType) ||
-  TEXT_EXT.test(name);
+  contentType.startsWith("text/") || TEXT_TYPE.test(contentType) || TEXT_EXT.test(name);
+
+const MEDIA_EXT =
+  /\.(mp4|m4v|mov|avi|mkv|webm|wmv|flv|mpe?g|3gp|mp3|wav|m4a|aac|ogg|oga|flac|wma)$/i;
+/** Video and audio cannot be read by the model: they are not downloaded. */
+export const isMedia = (contentType: string, name = "") =>
+  /^(video|audio)\//.test(contentType) || MEDIA_EXT.test(name);
 
 /** Read width/height from PNG, GIF or JPEG headers; null when unknown (e.g. WebP/SVG). */
 export function imageSize(b: Buffer): { width: number; height: number } | null {
@@ -181,73 +216,467 @@ async function loadTicket(ticket_id: number, archived: boolean, withConversation
   return { ok: true as const, ticket: t.data, conversations: c.conversations };
 }
 
+// ─── Reading attachments ──────────────────────────
+// Every attachment goes through download() above (allowlist, redirects, size caps), then
+// extractAny() turns it into content the model can use. Each response stays under
+// MAX_RESPONSE_BYTES; what does not fit is reported, with how to continue.
+
+type Content = CallToolResult["content"][number];
+type AttachmentHit = { att: any; origin: string; conversation_id?: number };
+
+/** All attachments of a ticket and its conversations, in ticket order, plus inline image count. */
+async function collectAttachments(ticket_id: number, archived: boolean) {
+  const t = await loadTicket(ticket_id, archived, true);
+  if (!t.ok) return t;
+  const items: AttachmentHit[] = (t.ticket.attachments ?? []).map((att: any) => ({
+    att,
+    origin: "ticket description",
+  }));
+  let inlineImages = extractImgSrcs(t.ticket.description).length;
+  for (const c of t.conversations) {
+    inlineImages += extractImgSrcs(c.body).length;
+    for (const att of c.attachments ?? [])
+      items.push({ att, origin: conversationLabel(c), conversation_id: c.id });
+  }
+  return { ok: true as const, items, inlineImages };
+}
+
+/** Whether a GIF is animated is only known after download, so the listing says so. */
+const GIF_LIST_HANDLING = "image if static; if animated, treated as video and not analysed";
+const isGifName = (name: string, contentType: string) =>
+  /\.gif$/i.test(name) || contentType.toLowerCase() === "image/gif";
+
+type FileStatus = "read" | "partial" | "not_analysed" | "disabled" | "error";
+
+const LIMIT_PARAMS = {
+  max_text_chars: z
+    .number()
+    .int()
+    .min(1000)
+    .max(500_000)
+    .optional()
+    .default(60_000)
+    .describe("Maximum characters of extracted text returned in total (default 60000)."),
+  max_pages: z
+    .number()
+    .int()
+    .min(1)
+    .max(200)
+    .optional()
+    .default(50)
+    .describe(
+      "Maximum PDF pages rendered as images in this call (default 50). The response size usually applies first.",
+    ),
+  max_images: z
+    .number()
+    .int()
+    .min(0)
+    .max(200)
+    .optional()
+    .default(50)
+    .describe(
+      "Maximum images returned in this call, including PDF pages and images inside documents or archives (default 50). The response size usually applies first.",
+    ),
+  har_raw: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("For HAR files, return the raw JSON instead of the request summary."),
+  xml_full: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe(
+      "For XML with a format-specific summary (for example application exports), also return the full formatted XML.",
+    ),
+};
+
+function budgetFrom(l: {
+  max_text_chars: number;
+  max_pages: number;
+  max_images: number;
+  har_raw: boolean;
+  xml_full: boolean;
+}): Budget {
+  return new Budget({
+    maxTextChars: l.max_text_chars,
+    maxPages: l.max_pages,
+    maxImages: l.max_images,
+    harRaw: l.har_raw,
+    xmlFull: l.xml_full,
+  });
+}
+
+/**
+ * Downloads and extracts one attachment within the given budget. Never throws:
+ * skipped and failed files return a header explaining why and no content.
+ */
+async function readAttachment(
+  ticketId: number,
+  hit: AttachmentHit,
+  budget: Budget,
+  /** Downloaded files kept for this call, so a file is never downloaded twice. */
+  cache?: Map<number, Buffer>,
+): Promise<{ header: Record<string, unknown>; content: Content[] }> {
+  const { att } = hit;
+  const name: string = att.name ?? `attachment-${att.id}`;
+  const kindByName = classifyByName(name, att.content_type ?? "");
+  const meta = {
+    ticket_id: ticketId,
+    attachment_id: att.id,
+    name,
+    content_type: att.content_type ?? null,
+    size: att.size ?? null,
+    origin: hit.origin,
+    conversation_id: hit.conversation_id ?? null,
+  };
+  const none = (extra: Record<string, unknown>) => ({
+    header: { ...meta, ...extra },
+    content: [] as Content[],
+  });
+
+  if (!kindEnabled(kindByName)) {
+    return none({
+      handling: DISABLED_HANDLING,
+      analysed: false,
+      reason: "type disabled by FRESHDESK_ATTACHMENT_TYPES (not downloaded)",
+    });
+  }
+  if (!willAnalyse(kindByName)) {
+    return none({
+      handling: HANDLING[kindByName],
+      analysed: false,
+      reason: `${HANDLING[kindByName]} (not downloaded)`,
+    });
+  }
+  if (!att.attachment_url) return none({ error: "Attachment has no download URL" });
+
+  const cached = cache?.get(att.id);
+  const dl = cached
+    ? ({ ok: true, bytes: cached } as const)
+    : await download(att.attachment_url, MAX_FILE_BYTES);
+  if (!dl.ok) return none({ error: `Could not download '${name}': ${dl.reason}` });
+  cache?.set(att.id, dl.bytes);
+
+  const out = await extractAny(dl.bytes, name, att.content_type ?? "", budget);
+
+  const { content } = out;
+
+  // With no content, the first note is the reason: keep it once, as reason.
+  const reason = out.content.length ? undefined : out.notes[0];
+  const notes = reason ? out.notes.slice(1) : out.notes;
+  const header = {
+    ...meta,
+    downloaded_bytes: dl.bytes.length,
+    detected_kind: out.kind,
+    handling: out.handling ?? HANDLING[out.kind],
+    truncated: budget.truncated,
+    ...(notes.length ? { notes } : {}),
+    ...(reason ? { analysed: false, reason } : {}),
+  };
+  return { header, content };
+}
+
 // ─── Tools ────────────────────────────────────────
 
 export function registerAttachmentTools(server: McpServer) {
   tool(
     server,
     "get_ticket_attachment",
-    "Download and read one attachment from a ticket or any of its conversations. Images come back as viewable images, " +
-      "text-like files (log, txt, json, xml, csv, yaml…) as text, other files (PDF, zip…) as an embedded base64 resource. " +
-      "Get attachment IDs from the 'attachments' arrays of get_ticket / get_ticket_conversation. " +
-      `Max ${Math.round(MAX_FILE_BYTES / 1048576)} MB (FRESHDESK_MAX_ATTACHMENT_BYTES).`,
+    "Read one file attached to a ticket or any of its conversations and return what the model can use: text (PDF page by page, " +
+      "Word as Markdown, Excel/CSV as tables, PowerPoint slide text, emails with headers and attachment list, JSON, XML, logs), " +
+      "a request summary for HAR files, and images (PNG/JPEG/static GIF/WebP, other formats converted, PDF pages with images or " +
+      "without text rendered). ZIP archives are listed and their files processed with the same rules. Videos and animated GIFs " +
+      "are not analysed. When the file does not fit in one response, the result has next_from_image: call again with from_image " +
+      "set to it to get the following pages or images (the text is not repeated). Attachment IDs come from list_ticket_attachments " +
+      "or the 'attachments' arrays of get_ticket / get_ticket_conversation. To read several attachments, use get_ticket_attachments. " +
+      `Max ${Math.round(MAX_FILE_BYTES / 1048576)} MB per file (FRESHDESK_MAX_ATTACHMENT_BYTES).`,
     {
       ticket_id: ticketId,
       attachment_id: z.number().int().describe("Attachment ID."),
       archived: archivedArg,
+      from_image: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .default(0)
+        .describe(
+          "Continue a file that did not fit in one response: skip the images (pages, embedded images) already returned. Use the next_from_image of the previous result.",
+        ),
+      ...LIMIT_PARAMS,
     },
-    async ({ ticket_id, attachment_id, archived }): Promise<CallToolResult> => {
+    async ({
+      ticket_id,
+      attachment_id,
+      archived,
+      from_image,
+      ...limits
+    }): Promise<CallToolResult> => {
       // Re-fetch: attachment_url is a short-lived signed URL.
-      const t = await loadTicket(ticket_id, archived, true);
-      if (!t.ok) return t.reply;
-      const all = [
-        ...(t.ticket.attachments ?? []),
-        ...t.conversations.flatMap((c: any) => c.attachments ?? []),
-      ];
-      const att = all.find((a: any) => a.id === attachment_id);
-      if (!att) {
+      const found = await collectAttachments(ticket_id, archived);
+      if (!found.ok) return found.reply;
+      const hit = found.items.find((c) => c.att.id === attachment_id);
+      if (!hit) {
         return text({
           error: `Attachment ${attachment_id} not found on ticket ${ticket_id}`,
-          available: all.map((a: any) => ({
-            id: a.id,
-            name: a.name,
-            content_type: a.content_type,
-            size: a.size,
+          available: found.items.map((c) => ({
+            id: c.att.id,
+            name: c.att.name,
+            content_type: c.att.content_type,
+            size: c.att.size,
+            origin: c.origin,
           })),
         });
       }
-      const dl = await download(att.attachment_url);
-      if (!dl.ok) return text({ error: `Could not download '${att.name}': ${dl.reason}` });
-      const contentType = att.content_type || dl.contentType;
-      const meta = { id: att.id, name: att.name, content_type: contentType, size: dl.bytes.length };
-      if (contentType.startsWith("image/") && contentType !== "image/svg+xml") {
-        return {
-          content: [
-            { type: "text", text: JSON.stringify(meta) },
-            { type: "image", data: dl.bytes.toString("base64"), mimeType: contentType },
-          ],
-        };
+      const budget = budgetFrom(limits);
+      budget.skipImages = from_image;
+      const read = await readAttachment(ticket_id, hit, budget);
+      const header: Record<string, unknown> = { ...read.header };
+      let content = read.content;
+      if (from_image > 0) {
+        // Continuation: only the images and their labels, the text came with the first part.
+        content = content.filter(
+          (b) => b.type === "image" || (b.type === "text" && b.text.length <= 300),
+        );
+        header.part = `continuation from image ${from_image + 1}`;
       }
-      if (isTextual(contentType, att.name)) {
-        return {
-          content: [
-            { type: "text", text: `${JSON.stringify(meta)}\n\n${dl.bytes.toString("utf8")}` },
-          ],
-        };
+      if (budget.imagesStopped) {
+        const next = from_image + budget.imagesReturned;
+        header.next_from_image = next;
+        header.continue = `More pages or images remain: call get_ticket_attachment again with from_image: ${next}.`;
       }
+      if (content.length === 0) return text(header);
       return {
-        content: [
-          { type: "text", text: JSON.stringify(meta) },
-          {
-            type: "resource",
-            resource: {
-              uri: `freshdesk://tickets/${ticket_id}/attachments/${att.id}/${encodeURIComponent(att.name ?? "file")}`,
-              mimeType: contentType,
-              blob: dl.bytes.toString("base64"),
-            },
-          },
-        ],
+        content: enforceResponseSize(
+          mergeTextBlocks([
+            { type: "text", text: JSON.stringify(header, null, 2) },
+            { type: "text", text: UNTRUSTED_NOTICE },
+            ...content,
+          ]),
+        ),
       };
+    },
+  );
+
+  tool(
+    server,
+    "get_ticket_attachments",
+    "Read the attachments of a ticket (all of them, or attachment_ids) in ticket order, in as few calls as needed. Each call " +
+      "returns as many complete files as fit in one response (about 900 KB, the MCP client limit). When more remain, the summary " +
+      "has next_cursor: call again with cursor set to it to continue, until the summary says all attachments have been returned. " +
+      "A file too large for a response on its own is returned in part, with how to continue it with get_ticket_attachment " +
+      "(from_image). Starts with a JSON summary (counters, files in this call with status and reason), " +
+      "then each file under a '===== Attachment N of M =====' marker. Videos and animated GIFs are listed as not analysed and " +
+      "never downloaded.",
+    {
+      ticket_id: ticketId,
+      attachment_ids: z
+        .array(z.number().int())
+        .min(1)
+        .max(100)
+        .optional()
+        .describe("Attachments to read. Omit to read every attachment of the ticket."),
+      cursor: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .default(0)
+        .describe(
+          "Where to continue: the next_cursor of the previous call (0 for the first call).",
+        ),
+      archived: archivedArg,
+      ...LIMIT_PARAMS,
+      max_text_chars: LIMIT_PARAMS.max_text_chars
+        .default(100_000)
+        .describe("Maximum characters of extracted text returned in this call (default 100000)."),
+    },
+    async ({ ticket_id, attachment_ids, cursor, archived, ...limits }): Promise<CallToolResult> => {
+      const found = await collectAttachments(ticket_id, archived);
+      if (!found.ok) return found.reply;
+      const missing = (attachment_ids ?? []).filter(
+        (id) => !found.items.some((c) => c.att.id === id),
+      );
+      const selected = attachment_ids
+        ? found.items.filter((c) => attachment_ids.includes(c.att.id))
+        : found.items;
+
+      const budget = budgetFrom(limits);
+      const cache = new Map<number, Buffer>();
+      const entries: Record<string, unknown>[] = [];
+      const sections: Content[] = [];
+      let nextCursor: number | undefined;
+
+      for (let i = cursor; i < selected.length; i++) {
+        const hit = selected[i];
+        const before = {
+          chars: budget.chars,
+          images: budget.images,
+          imageBytes: budget.imageBytes,
+          sizeLimited: budget.sizeLimited,
+        };
+        budget.truncated = false;
+        budget.imagesStopped = false;
+        budget.imagesReturned = 0;
+        const { header, content } = await readAttachment(ticket_id, hit, budget, cache);
+        const cut = budget.truncated;
+
+        if (cut && i > cursor) {
+          // Does not fit completely after other files: leave it whole for the next call.
+          budget.chars = before.chars;
+          budget.images = before.images;
+          budget.imageBytes = before.imageBytes;
+          budget.sizeLimited = before.sizeLimited;
+          nextCursor = i;
+          break;
+        }
+
+        let status: FileStatus;
+        let reason: string | undefined;
+        if (header.error) {
+          status = "error";
+          reason = String(header.error);
+        } else if (content.length) {
+          status = cut ? "partial" : "read";
+        } else if (String(header.reason ?? "").includes("FRESHDESK_ATTACHMENT_TYPES")) {
+          status = "disabled";
+          reason = String(header.reason);
+        } else {
+          status = "not_analysed";
+          reason = String(header.reason ?? "not analysed");
+        }
+        const continueWith =
+          status === "partial"
+            ? budget.imagesStopped
+              ? `Too large for one response: call get_ticket_attachment with attachment_id ${hit.att.id} and from_image ${budget.imagesReturned} for the rest.`
+              : "Text truncated: call get_ticket_attachment with a larger max_text_chars for the rest."
+            : undefined;
+        entries.push({
+          number: i + 1,
+          id: hit.att.id,
+          name: header.name,
+          origin: header.origin,
+          ...(header.conversation_id ? { conversation_id: header.conversation_id } : {}),
+          status,
+          ...(reason ? { reason } : {}),
+          ...(continueWith ? { continue: continueWith } : {}),
+          ...(header.handling && status !== "not_analysed" && status !== "disabled"
+            ? { handling: header.handling }
+            : {}),
+          ...(header.notes ? { notes: header.notes } : {}),
+        });
+        if (content.length) {
+          sections.push(
+            {
+              type: "text",
+              text: `===== Attachment ${i + 1} of ${selected.length}: ${header.name} (id ${hit.att.id}, ${header.origin}${hit.conversation_id ? `, conversation ${hit.conversation_id}` : ""}) =====\nStatus: ${status}${continueWith ? ` (${continueWith})` : ""}\nHandling: ${header.handling}`,
+            },
+            ...content,
+          );
+        }
+        if (cut) {
+          // A file larger than a whole response: what fits was returned, continue after it.
+          if (i + 1 < selected.length) nextCursor = i + 1;
+          break;
+        }
+      }
+
+      const count = (st: FileStatus) => entries.filter((e) => e.status === st).length;
+      const overview = {
+        ticket_id,
+        attachments: selected.length,
+        this_call: entries.length
+          ? `attachments ${cursor + 1} to ${cursor + entries.length} of ${selected.length}`
+          : "none",
+        read: count("read"),
+        partial: count("partial"),
+        not_analysed: count("not_analysed"),
+        ...(count("disabled") ? { disabled: count("disabled") } : {}),
+        errors: count("error"),
+        ...(nextCursor !== undefined
+          ? {
+              next_cursor: nextCursor,
+              continue: `${selected.length - nextCursor} attachment(s) left: call get_ticket_attachments again with cursor: ${nextCursor}.`,
+            }
+          : { complete: "All attachments have been returned." }),
+        ...(missing.length ? { not_found: missing } : {}),
+        files: entries,
+      };
+      return {
+        content: enforceResponseSize(
+          mergeTextBlocks([
+            { type: "text", text: JSON.stringify(overview, null, 2) },
+            ...(sections.length
+              ? [{ type: "text" as const, text: UNTRUSTED_NOTICE }, ...sections]
+              : []),
+          ]),
+        ),
+      };
+    },
+  );
+
+  tool(
+    server,
+    "list_ticket_attachments",
+    "List every file attached to one or more tickets (description and all conversations) without downloading them: id, name, " +
+      "type, size, origin and how get_ticket_attachment will handle it. Videos, audio and executables are flagged as not " +
+      "analysed. Also counts inline images pasted in message bodies (read them with get_ticket_inline_images). Use " +
+      "name_contains to find a file across several tickets.",
+    {
+      ticket_ids: z.array(z.number().int()).min(1).max(25).describe("Ticket IDs (up to 25)."),
+      name_contains: z
+        .string()
+        .optional()
+        .describe("Only return attachments whose file name contains this text (case-insensitive)."),
+      archived: archivedArg,
+    },
+    async ({ ticket_ids, name_contains, archived }): Promise<CallToolResult> => {
+      const filter = name_contains?.toLowerCase();
+      const results = [];
+      for (const ticket_id of ticket_ids) {
+        const found = await collectAttachments(ticket_id, archived);
+        if (!found.ok) {
+          results.push({ ticket_id, error: JSON.parse(found.reply.content[0].text) });
+          continue;
+        }
+        const attachments = found.items
+          .filter(
+            (c) =>
+              !filter ||
+              String(c.att.name ?? "")
+                .toLowerCase()
+                .includes(filter),
+          )
+          .map((c) => {
+            const kind = classifyByName(c.att.name ?? "", c.att.content_type ?? "");
+            return {
+              id: c.att.id,
+              name: c.att.name,
+              content_type: c.att.content_type,
+              size: c.att.size,
+              created_at: c.att.created_at,
+              origin: c.origin,
+              conversation_id: c.conversation_id ?? null,
+              handling: !kindEnabled(kind)
+                ? DISABLED_HANDLING
+                : isGifName(c.att.name ?? "", c.att.content_type ?? "")
+                  ? GIF_LIST_HANDLING
+                  : HANDLING[kind],
+              analysed: willAnalyse(kind),
+            };
+          });
+        const counts: Record<string, number> = {};
+        for (const a of attachments) counts[a.handling] = (counts[a.handling] ?? 0) + 1;
+        results.push({
+          ticket_id,
+          attachment_count: attachments.length,
+          by_handling: counts,
+          inline_image_count: filter ? undefined : found.inlineImages,
+          attachments,
+        });
+      }
+      return text(ticket_ids.length === 1 ? results[0] : { tickets: results });
     },
   );
 
@@ -278,8 +707,10 @@ export function registerAttachmentTools(server: McpServer) {
         .int()
         .min(0)
         .optional()
-        .default(100)
-        .describe("Skip images whose width AND height are below this many pixels (0 = keep all)."),
+        .default(MIN_IMAGE_DIMENSION)
+        .describe(
+          `Skip images whose width AND height are below this many pixels (0 = keep all). Default ${MIN_IMAGE_DIMENSION} (FRESHDESK_MIN_IMAGE_DIMENSION).`,
+        ),
       archived: archivedArg,
     },
     async ({
@@ -289,6 +720,8 @@ export function registerAttachmentTools(server: McpServer) {
       min_dimension,
       archived,
     }): Promise<CallToolResult> => {
+      if (!kindEnabled("image"))
+        return text({ ticket_id, error: "Images are disabled by FRESHDESK_ATTACHMENT_TYPES" });
       const t = await loadTicket(ticket_id, archived, include_conversations);
       if (!t.ok) return t.reply;
 
@@ -312,6 +745,13 @@ export function registerAttachmentTools(server: McpServer) {
       const skipped: { origin: string; src: string; reason: string }[] = [];
       const images: CallToolResult["content"] = [];
       let total = 0;
+      // Keeps the response under the client size limit (images recompressed when possible).
+      const sizeBudget = new Budget({
+        maxTextChars: 10_000,
+        maxPages: 0,
+        maxImages: max_images,
+        harRaw: false,
+      });
 
       for (const { src, origin } of sources) {
         const shortSrc = src.startsWith("data:") ? `${src.slice(0, 40)}…` : src.split("?")[0];
@@ -364,6 +804,10 @@ export function registerAttachmentTools(server: McpServer) {
           skipped.push({ origin, src: shortSrc, reason: `not a raster image (${contentType})` });
           continue;
         }
+        if (isAnimatedGif(bytes)) {
+          skipped.push({ origin, src: shortSrc, reason: ANIMATED_GIF_HANDLING });
+          continue;
+        }
         const dim = imageSize(bytes);
         if (dim && min_dimension > 0 && dim.width < min_dimension && dim.height < min_dimension) {
           skipped.push({ origin, src: shortSrc, reason: `too small (${dim.width}x${dim.height})` });
@@ -374,6 +818,23 @@ export function registerAttachmentTools(server: McpServer) {
           continue;
         }
         total += bytes.length;
+        // BMP, TIFF and HEIC cannot be viewed by the model and are not converted.
+        const mime = sniffSupportedImage(bytes);
+        if (!mime) {
+          skipped.push({ origin, src: shortSrc, reason: `${contentType}: ${UNSUPPORTED_IMAGE}` });
+          continue;
+        }
+        const fit = await sizeBudget.fitImage(bytes, mime);
+        if (!fit) {
+          skipped.push({
+            origin,
+            src: shortSrc,
+            reason: `does not fit in this response (MCP clients reject results over about ${Math.round(MAX_RESPONSE_BYTES / 1024)} KB)`,
+          });
+          continue;
+        }
+        bytes = fit.data;
+        contentType = fit.mimeType;
         const index = returned.length + 1;
         returned.push({ index, origin, content_type: contentType, bytes: bytes.length, ...dim });
         images.push({ type: "text", text: `Image ${index} — ${origin}` });
@@ -388,7 +849,11 @@ export function registerAttachmentTools(server: McpServer) {
         images: returned,
         skipped_details: skipped,
       };
-      return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }, ...images] };
+      return {
+        content: enforceResponseSize(
+          mergeTextBlocks([{ type: "text", text: JSON.stringify(summary, null, 2) }, ...images]),
+        ),
+      };
     },
   );
 }

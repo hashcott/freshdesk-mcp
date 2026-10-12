@@ -70,6 +70,8 @@ const anchors = {
   delete_ticket_form_field: "delete_ticket_form_field",
   get_ticket_attachment: "view_a_ticket",
   get_ticket_inline_images: "view_a_ticket",
+  get_ticket_attachments: "view_a_ticket",
+  list_ticket_attachments: "view_a_ticket",
   filter_contacts: "filter_contacts",
   export_contacts: "export_contact",
   view_contact_export: "export_contact",
