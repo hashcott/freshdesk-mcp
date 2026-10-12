@@ -18,6 +18,10 @@ export const allowedHosts = (process.env.FRESHDESK_ATTACHMENT_HOSTS ?? DEFAULT_H
 const MAX_FILE_BYTES = Number(process.env.FRESHDESK_MAX_ATTACHMENT_BYTES) || 5 * 1024 * 1024;
 const MAX_TOTAL_BYTES = MAX_FILE_BYTES * 4; // ponytail: fixed per-call budget, add an env var if anyone needs it
 const MAX_REDIRECTS = 3;
+// MCP clients reject large tool results (Claude Desktop at about 1 MB), so every response of
+// these tools is kept under this size, counting base64 images and text.
+export const MAX_RESPONSE_BYTES = Number(process.env.FRESHDESK_MAX_RESPONSE_BYTES) || 900 * 1024;
+const base64Length = (bytes: number) => Math.ceil(bytes / 3) * 4;
 
 export function isAllowedUrl(raw: string): boolean {
   let u: URL;
@@ -40,11 +44,16 @@ export async function download(
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!isAllowedUrl(current))
       return { ok: false, reason: `host not allowed: ${hostOf(current)}` };
-    let res: Response;
-    try {
-      res = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
-    } catch (e) {
-      return { ok: false, reason: `network error: ${(e as Error).message}` };
+    let res: Response | undefined;
+    // One retry on network errors: servers close idle keep-alive connections, and reusing one
+    // fails at once. Timeouts are not retried.
+    for (let attempt = 1; !res; attempt++) {
+      try {
+        res = await fetch(current, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
+      } catch (e) {
+        if (attempt >= 2 || (e as Error).name === "TimeoutError")
+          return { ok: false, reason: `network error: ${(e as Error).message}` };
+      }
     }
     if (res.status >= 300 && res.status < 400) {
       const loc = res.headers.get("location");
@@ -90,11 +99,19 @@ const hostOf = (raw: string) => {
 
 // ─── Content helpers ──────────────────────────────
 
-const TEXT_EXT = /\.(txt|log|json|xml|csv|tsv|ya?ml|md|ini|conf|cfg|html?|js|ts|py|sql|sh)$/i;
+const TEXT_EXT = /\.(txt|log|json|xml|csv|tsv|ya?ml|md|ini|conf|cfg|html?|js|ts|py|sql|sh|har)$/i;
+// Matched on the subtype (application/json, application/x-yaml) or the +json / +xml suffix:
+// Office Open XML types contain "xml" inside their name (wordprocessingml) but are zip files.
+const TEXT_TYPE =
+  /^application\/(?:x-)?(?:json|xml|yaml|csv|javascript|sh|sql|ndjson)$|\+(?:json|xml)$/;
 export const isTextual = (contentType: string, name = "") =>
-  contentType.startsWith("text/") ||
-  /(json|xml|yaml|csv|javascript|x-sh|sql)/.test(contentType) ||
-  TEXT_EXT.test(name);
+  contentType.startsWith("text/") || TEXT_TYPE.test(contentType) || TEXT_EXT.test(name);
+
+const MEDIA_EXT =
+  /\.(mp4|m4v|mov|avi|mkv|webm|wmv|flv|mpe?g|3gp|mp3|wav|m4a|aac|ogg|oga|flac|wma)$/i;
+/** Video and audio cannot be read by the model: they are not downloaded. */
+export const isMedia = (contentType: string, name = "") =>
+  /^(video|audio)\//.test(contentType) || MEDIA_EXT.test(name);
 
 /** Read width/height from PNG, GIF or JPEG headers; null when unknown (e.g. WebP/SVG). */
 export function imageSize(b: Buffer): { width: number; height: number } | null {
@@ -188,7 +205,8 @@ export function registerAttachmentTools(server: McpServer) {
     server,
     "get_ticket_attachment",
     "Download and read one attachment from a ticket or any of its conversations. Images come back as viewable images, " +
-      "text-like files (log, txt, json, xml, csv, yaml…) as text, other files (PDF, zip…) as an embedded base64 resource. " +
+      "text-like files (log, txt, json, xml, csv, yaml, har…) as text, other files (PDF, zip, Office…) as an embedded base64 resource. " +
+      "Video and audio are not downloaded, and files too large for one response (FRESHDESK_MAX_RESPONSE_BYTES) return their metadata. " +
       "Get attachment IDs from the 'attachments' arrays of get_ticket / get_ticket_conversation. " +
       `Max ${Math.round(MAX_FILE_BYTES / 1048576)} MB (FRESHDESK_MAX_ATTACHMENT_BYTES).`,
     {
@@ -216,10 +234,28 @@ export function registerAttachmentTools(server: McpServer) {
           })),
         });
       }
+      if (isMedia(att.content_type ?? "", att.name)) {
+        return text({
+          id: att.id,
+          name: att.name,
+          content_type: att.content_type,
+          size: att.size,
+          note: "Video and audio cannot be read by the model, so the file was not downloaded.",
+        });
+      }
       const dl = await download(att.attachment_url);
       if (!dl.ok) return text({ error: `Could not download '${att.name}': ${dl.reason}` });
       const contentType = att.content_type || dl.contentType;
       const meta = { id: att.id, name: att.name, content_type: contentType, size: dl.bytes.length };
+      const tooLarge =
+        !isTextual(contentType, att.name) &&
+        base64Length(dl.bytes.length) > MAX_RESPONSE_BYTES - 2048;
+      if (tooLarge) {
+        return text({
+          ...meta,
+          note: `Too large to return in one response (MCP clients reject results over about ${Math.round(MAX_RESPONSE_BYTES / 1024)} KB, FRESHDESK_MAX_RESPONSE_BYTES).`,
+        });
+      }
       if (contentType.startsWith("image/") && contentType !== "image/svg+xml") {
         return {
           content: [
@@ -229,11 +265,16 @@ export function registerAttachmentTools(server: McpServer) {
         };
       }
       if (isTextual(contentType, att.name)) {
-        return {
-          content: [
-            { type: "text", text: `${JSON.stringify(meta)}\n\n${dl.bytes.toString("utf8")}` },
-          ],
-        };
+        let body = dl.bytes.toString("utf8");
+        const room = MAX_RESPONSE_BYTES - 4096;
+        if (Buffer.byteLength(body) > room) {
+          const kept = Buffer.from(body)
+            .subarray(0, room)
+            .toString("utf8")
+            .replace(/\uFFFD$/, "");
+          body = `${kept}\n\n[TRUNCATED: ${kept.length} of ${body.length} characters, response size limit]`;
+        }
+        return { content: [{ type: "text", text: `${JSON.stringify(meta)}\n\n${body}` }] };
       }
       return {
         content: [
@@ -312,6 +353,8 @@ export function registerAttachmentTools(server: McpServer) {
       const skipped: { origin: string; src: string; reason: string }[] = [];
       const images: CallToolResult["content"] = [];
       let total = 0;
+      // Room for the JSON summary is kept aside.
+      let responseRoom = MAX_RESPONSE_BYTES - 16 * 1024;
 
       for (const { src, origin } of sources) {
         const shortSrc = src.startsWith("data:") ? `${src.slice(0, 40)}…` : src.split("?")[0];
@@ -373,6 +416,15 @@ export function registerAttachmentTools(server: McpServer) {
           skipped.push({ origin, src: shortSrc, reason: "per-call size budget exhausted" });
           continue;
         }
+        if (base64Length(bytes.length) > responseRoom) {
+          skipped.push({
+            origin,
+            src: shortSrc,
+            reason: `does not fit in this response (MCP clients reject results over about ${Math.round(MAX_RESPONSE_BYTES / 1024)} KB)`,
+          });
+          continue;
+        }
+        responseRoom -= base64Length(bytes.length);
         total += bytes.length;
         const index = returned.length + 1;
         returned.push({ index, origin, content_type: contentType, bytes: bytes.length, ...dim });
